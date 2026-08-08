@@ -1,0 +1,7 @@
+Collecting PyQt6
+  Using cached pyqt6-6.11.0-cp310-abi3-win_amd64.whl.metadata (2.2 kB)
+ERROR: Could not find a version that satisfies the requirement PyQt6-Qt6-Multimedia (from versions: none)
+
+[notice] A new release of pip is available: 26.1.2 -> 26.2.1
+[notice] To update, run: python.exe -m pip install --upgrade pip
+ERROR: No matching distribution found for PyQt6-Qt6-Multimedia
