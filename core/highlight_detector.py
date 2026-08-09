@@ -328,46 +328,54 @@ def _detect_kill_feed(
     x1r, y1r, x2r, y2r = kill_feed_region
     player_lower = player_name.lower()
 
-    # Pre-extract frames for parallel OCR
-    frames_to_process = []
+    # Pre-extract all frames into memory first (batch mode)
+    frames_batch = []
     frame_idx = 0
     while frame_idx < total_frames:
-        frames_to_process.append(frame_idx)
+        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+        ok, frame = cap.read()
+        if not ok:
+            break
+        
+        h, w = frame.shape[:2]
+        x1, y1 = int(w * x1r), int(h * y1r)
+        x2, y2 = int(w * x2r), int(h * y2r)
+        crop = frame[y1:y2, x1:x2]
+        frames_batch.append((frame_idx, crop))
+        
         frame_idx += frame_step
-
+    
+    logger.info(f"Pre-extracted {len(frames_batch)} frames for OCR batch processing")
+    cap.release()
+    
+    device = _get_device()
+    logger.info(f"OCR device: {device}")
+    max_workers_ocr = 4 if device == "cuda" else 2
+    logger.info(f"OCR batch processing: {max_workers_ocr} workers on {device}")
+    
     ocr_count = 0
-    with ThreadPoolExecutor(max_workers=2) as executor:
+    with ThreadPoolExecutor(max_workers=max_workers_ocr) as executor:
         future_to_idx = {}
         
-        for fidx in frames_to_process:
-            cap.set(cv2.CAP_PROP_POS_FRAMES, fidx)
-            ok, frame = cap.read()
-            if not ok:
-                continue
-                
-            h, w = frame.shape[:2]
-            x1, y1 = int(w * x1r), int(h * y1r)
-            x2, y2 = int(w * x2r), int(h * y2r)
-            crop = frame[y1:y2, x1:x2]
-            
+        for frame_idx, crop in frames_batch:
+            if reader is None:
+                break
             future = executor.submit(reader.readtext, crop, detail=1)
-            future_to_idx[future] = fidx
+            future_to_idx[future] = frame_idx
         
         for future in as_completed(future_to_idx):
-            fidx = future_to_idx[future]
+            frame_idx = future_to_idx[future]
             try:
                 results = future.result()
                 ocr_count += 1
                 for bbox, text, conf in results:
                     if player_lower in text.lower():
-                        t = fidx / fps
+                        t = frame_idx / fps
                         kills.append((t, conf))
                         logger.debug(f"Kill detected at {t:.2f}s: {text} (conf={conf:.2f})")
                         break
             except Exception as e:
-                logger.error(f"OCR error at frame {fidx}: {e}")
-
-    cap.release()
+                logger.error(f"OCR error at frame {frame_idx}: {e}")
     logger.info(f"Kill feed OCR complete: {len(kills)} kills found, {ocr_count} frames processed")
     return kills
 
