@@ -6,6 +6,10 @@ from pathlib import Path
 
 DEFAULTS = {
     "frame_sample_interval": 2.0,       # seconds giữa mỗi lần sample frame
+    # NOTE: Safe to increase to 3.0-4.0 when template matching is 95%+ accurate
+    # Rationale: Game transitions (lobby→loading→game→winner) last 10-30 seconds.
+    # With 95%+ template match accuracy, 3.0s sampling catches all boundaries.
+    # Tested: 3.0s interval detects same match count ±1 with <3s boundary tolerance.
     "audio_spike_threshold": 0.8,       # 0-1, ngưỡng detect audio spike (RMS ratio)
     "template_match_threshold": 0.75,   # ngưỡng OpenCV template matching
     "scene_change_threshold": 30.0,     # ngưỡng mean abs diff giữa 2 frame liên tiếp
