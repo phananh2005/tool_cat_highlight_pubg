@@ -3,3 +3,4 @@ opencv-python
 numpy
 scipy
 easyocr
+torch>=2.0.0

@@ -24,6 +24,46 @@ Tool desktop GUI tự động phát hiện và cắt highlight từ livestream P
 - Match detection: 1.2x (frame downscale)
 - Parallel processing: 2-3x (ThreadPoolExecutor)
 
+## ⚡ GPU Acceleration (Optional)
+
+**Detection is 35-40% faster with NVIDIA GPU:**
+
+### Check GPU availability:
+```bash
+python -c "import torch; print(f'GPU available: {torch.cuda.is_available()}')"
+```
+
+### GPU available:
+- EasyOCR automatically uses CUDA
+- Batch processing uses 4 workers (vs 2 on CPU)
+- Expected time: ~6-7 min for 1h video
+
+### No GPU / CPU-only:
+- Falls back automatically
+- Detection still works: ~10 min for 1h video
+- No extra setup needed
+
+### Setup NVIDIA GPU:
+
+If `torch.cuda.is_available()` returns False:
+
+1. **Install NVIDIA CUDA Toolkit** (if not already installed):
+   - Download: https://developer.nvidia.com/cuda-downloads
+   - Choose your OS and follow setup
+
+2. **Reinstall PyTorch with CUDA support**:
+   ```bash
+   pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+   ```
+   (cu118 = CUDA 11.8; choose cu121 for CUDA 12.1 if you have it)
+
+3. **Verify installation**:
+   ```bash
+   python -c "import torch; print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU')"
+   ```
+
+4. **Restart app** — detection should now be 35-40% faster
+
 ---
 
 ## 🚀 Cài đặt
@@ -185,9 +225,24 @@ Settings → FFmpeg path: C:\path\to\ffmpeg.exe
 ### Detection quá chậm
 ```
 Settings → frame_sample_interval: ↑ 3.0 or 4.0
-          → death_detect_enabled: OFF
-          → player_name: (bỏ trống)
+           → death_detect_enabled: OFF
+           → player_name: (bỏ trống)
 ```
+
+### GPU not detected / detection still slow
+Check GPU availability:
+```bash
+python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
+```
+
+If False, install CUDA-enabled PyTorch:
+```bash
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+```
+
+Restart app. Detection should now be 35-40% faster.
+
+See `docs/PERFORMANCE.md` for detailed GPU setup and troubleshooting.
 
 ### Miss highlights
 ```
