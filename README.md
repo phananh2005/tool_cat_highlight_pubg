@@ -11,18 +11,27 @@ Tool desktop GUI tự động phát hiện và cắt highlight từ livestream P
 - **📊 Timeline visual:** Toàn bộ video với match + highlight markers
 - **⚡ Parallel processing:** Audio + scene + spectate chạy cùng lúc → 4x nhanh
 
-## 📊 Hiệu năng (v2.0)
+## 📊 Hiệu năng (v2.0 + GPU Acceleration)
 
-| Video | Trước | Sau | Cải thiện |
-|-------|-------|-----|----------|
-| 1 giờ | ~40 min | ~10 min | **4x** |
-| 4 giờ | ~160 min | ~40 min | **4x** |
+| Video | CPU | GPU | Cải thiện |
+|-------|-----|-----|----------|
+| 1 giờ | ~10 min | **~6-7 min** | **35-40%** |
+| 4 giờ | ~40 min | **~24-28 min** | **35-40%** |
+
+**Yêu cầu cho GPU (tùy chọn):**
+- NVIDIA GPU + CUDA Toolkit
+- PyTorch hỗ trợ CUDA
+- Xem [Hướng dẫn GPU](docs/PERFORMANCE.md#gpu-setup)
+
+**Chỉ CPU:** Vẫn ~10 min (baseline v2.0)
 
 **Optimizations:**
 - Audio spike detection: 10x (NumPy vectorized)
-- Scene change detection: 2.6x (early resize)
-- Match detection: 1.2x (frame downscale)
+- Scene change detection: 2.6x (early resize + motion uniformity filter)
+- Match detection: 1.2x (frame downscale + adaptive sampling)
+- Kill feed OCR: 2.5-3x (GPU batch processing, 4 workers)
 - Parallel processing: 2-3x (ThreadPoolExecutor)
+- **Overall with GPU: 1.4-1.7x faster (35-40% time reduction)**
 
 ## ⚡ GPU Acceleration (Optional)
 
