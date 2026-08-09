@@ -100,6 +100,29 @@ def _detect_audio_spikes(
 # Scene change detection
 # ---------------------------------------------------------------------------
 
+def _detect_motion_uniformity(prev_gray: np.ndarray, gray: np.ndarray) -> float:
+    """Calculate motion uniformity (0=non-uniform scene change, 1=uniform camera pan).
+    
+    Uniform camera movements have consistent spatial patterns, while scene cuts have random patterns.
+    Returns uniformity score [0, 1].
+    """
+    if prev_gray is None or gray is None:
+        return 0.0
+    
+    h, w = gray.shape
+    diff = gray.astype(np.int16) - prev_gray.astype(np.int16)
+    
+    row_variance = np.var(np.mean(np.abs(diff), axis=1))
+    col_variance = np.var(np.mean(np.abs(diff), axis=0))
+    
+    max_variance = max(row_variance, col_variance)
+    if max_variance < 1e-6:
+        return 1.0
+    
+    uniformity = 1.0 - (max_variance / (h * w + w))
+    return float(np.clip(uniformity, 0.0, 1.0))
+
+
 def _detect_scene_changes(
     video_path: str,
     sample_interval: float = 1.0,
@@ -124,6 +147,7 @@ def _detect_scene_changes(
     logger.info(f"Video info: fps={fps:.2f}, total_frames={total_frames}, frame_step={frame_step}")
 
     prev_gray = None
+    consecutive_diffs: list[tuple[float, float, float]] = []
     changes: list[tuple[float, float]] = []
     frame_idx = 0
 
@@ -140,13 +164,16 @@ def _detect_scene_changes(
             diff = float(np.mean(np.abs(gray.astype(np.int16) - prev_gray.astype(np.int16))))
             if diff >= threshold:
                 t = frame_idx / fps
-                changes.append((t, diff))
+                uniformity = _detect_motion_uniformity(prev_gray, gray)
+                consecutive_diffs.append((t, diff, uniformity))
+                if uniformity < 0.6:
+                    changes.append((t, diff))
 
         prev_gray = gray
         frame_idx += frame_step
 
     cap.release()
-    logger.info(f"Scene changes detected: {len(changes)} events")
+    logger.info(f"Scene changes: {len(consecutive_diffs)} raw, {len(changes)} after uniformity filter")
     return changes
 
 
