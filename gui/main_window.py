@@ -14,7 +14,7 @@ from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSplitter,
     QTreeWidget, QTreeWidgetItem, QPushButton, QLabel, QFileDialog,
     QProgressBar, QStatusBar, QSlider, QProgressDialog,
-    QDoubleSpinBox, QLineEdit, QCheckBox, QMessageBox,
+    QDoubleSpinBox, QSpinBox, QLineEdit, QCheckBox, QMessageBox,
     QGroupBox, QFormLayout, QDialog, QDialogButtonBox,
     QApplication,
 )
@@ -223,7 +223,7 @@ class ExportWorker(QThread):
 
     def __init__(self, source: str, highlights: list[Highlight],
                  output_dir: str, group_label: str, ffmpeg: str,
-                 accurate: bool, merge: bool):
+                 accurate: bool, merge: bool, fps: int | None = None):
         super().__init__()
         self.source = source
         self.highlights = highlights
@@ -232,12 +232,14 @@ class ExportWorker(QThread):
         self.ffmpeg = ffmpeg
         self.accurate = accurate
         self.merge = merge
+        self.fps = fps
 
     def run(self):
         try:
             files = export_highlights(
                 self.source, self.highlights, self.output_dir,
                 self.group_label, self.ffmpeg, self.accurate, self.merge,
+                self.fps,
                 progress_cb=lambda p, s: self.progress.emit(p, s),
             )
             self.finished.emit(files)
@@ -791,6 +793,7 @@ class MainWindow(QMainWindow):
             self.cfg["ffmpeg_path"],
             self.chk_accurate.isChecked(),
             self.chk_merge.isChecked(),
+            self.cfg.get("export_fps"),
         )
         self._export_worker.progress.connect(self._on_detect_progress)
         self._export_worker.finished.connect(self._on_export_finished)
@@ -980,6 +983,12 @@ class SettingsDialog(QDialog):
         self.spn_pad_a.setSuffix(" s")
         layout.addRow("Pad sau highlight:", self.spn_pad_a)
 
+        self.spn_export_fps = QSpinBox()
+        self.spn_export_fps.setRange(24, 120)
+        self.spn_export_fps.setValue(config.get("export_fps", 60))
+        self.spn_export_fps.setSuffix(" fps")
+        layout.addRow("Export FPS:", self.spn_export_fps)
+
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
@@ -1004,6 +1013,7 @@ class SettingsDialog(QDialog):
         self.cfg["template_match_threshold"] = self.spn_tmpl_th.value()
         self.cfg["highlight_pad_before"] = self.spn_pad_b.value()
         self.cfg["highlight_pad_after"] = self.spn_pad_a.value()
+        self.cfg["export_fps"] = self.spn_export_fps.value()
         self.accept()
 
 

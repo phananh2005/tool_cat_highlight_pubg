@@ -17,6 +17,7 @@ DEFAULTS = {
     "highlight_pad_after": 2.0,         # seconds pad sau highlight
     "highlight_min_gap": 5.0,           # seconds — 2 highlight gần hơn thì merge
     "export_format": "mp4",
+    "export_fps": 60,
     "ffmpeg_path": "ffmpeg",
     "player_name": "",
     "kill_feed_region": [0.65, 0.0, 1.0, 0.35],  # x1,y1,x2,y2 tỷ lệ % crop kill feed

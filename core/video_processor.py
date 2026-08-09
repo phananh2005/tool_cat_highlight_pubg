@@ -20,11 +20,13 @@ def cut_clip(
     output: str,
     ffmpeg: str = "ffmpeg",
     accurate: bool = False,
+    fps: int | None = None,
 ) -> bool:
     """Cắt 1 clip từ source video.
 
     Args:
         accurate: True = re-encode cho seek chính xác (chậm hơn)
+        fps: Output FPS (None = giữ fps gốc)
     """
     Path(output).parent.mkdir(parents=True, exist_ok=True)
     duration = end - start
@@ -37,19 +39,24 @@ def cut_clip(
             "-t", f"{duration:.3f}",
             "-c:v", "libx264", "-preset", "fast", "-crf", "18",
             "-c:a", "aac", "-b:a", "192k",
-            output,
         ]
+        if fps:
+            cmd.extend(["-r", str(fps)])
+        cmd.append(output)
     else:
-        # Stream copy — nhanh nhưng seek chỉ chính xác đến keyframe
         cmd = [
             ffmpeg, "-y",
             "-ss", f"{start:.3f}",
             "-i", source,
             "-t", f"{duration:.3f}",
+        ]
+        if fps:
+            cmd.extend(["-r", str(fps)])
+        cmd.extend([
             "-c", "copy",
             "-avoid_negative_ts", "make_zero",
             output,
-        ]
+        ])
 
     result = subprocess.run(
         cmd, capture_output=True, timeout=300,
@@ -100,6 +107,7 @@ def export_highlights(
     ffmpeg: str = "ffmpeg",
     accurate: bool = False,
     merge: bool = False,
+    fps: int | None = None,
     progress_cb: Optional[Callable[[float, str], None]] = None,
 ) -> list[str]:
     """Export highlights — riêng lẻ + tùy chọn gộp.
@@ -123,7 +131,7 @@ def export_highlights(
         clip_name = f"{group_label}_{safe_label}.mp4"
         clip_path = str(out / clip_name)
 
-        ok = cut_clip(source, h.start_time, h.end_time, clip_path, ffmpeg, accurate)
+        ok = cut_clip(source, h.start_time, h.end_time, clip_path, ffmpeg, accurate, fps)
         if ok:
             created.append(clip_path)
 
