@@ -29,15 +29,20 @@ def _load_templates(templates_dir: str | Path) -> dict[str, np.ndarray]:
 
 def _match_template(frame: np.ndarray, template: np.ndarray, threshold: float) -> float:
     """So khớp template với frame. Trả về max score."""
-    # Resize template nếu lớn hơn frame
     fh, fw = frame.shape[:2]
     th, tw = template.shape[:2]
+    
     if th > fh or tw > fw:
         scale = min(fh / th, fw / tw) * 0.9
-        template = cv2.resize(template, (int(tw * scale), int(th * scale)))
+        new_w, new_h = int(tw * scale), int(th * scale)
+        template = cv2.resize(template, (new_w, new_h))
+        th, tw = new_h, new_w
+    
+    if th <= 0 or tw <= 0 or fh < th or fw < tw:
+        return 0.0
 
     result = cv2.matchTemplate(frame, template, cv2.TM_CCOEFF_NORMED)
-    return float(result.max())
+    return float(result.max()) if result.size > 0 else 0.0
 
 
 def detect_matches(
@@ -63,7 +68,6 @@ def detect_matches(
     """
     templates = _load_templates(templates_dir)
     if not templates:
-        # Không có template → coi toàn bộ video là 1 game
         cap = cv2.VideoCapture(video_path)
         total = cap.get(cv2.CAP_PROP_FRAME_COUNT) / max(cap.get(cv2.CAP_PROP_FPS), 1)
         cap.release()
@@ -77,8 +81,8 @@ def detect_matches(
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     total_duration = total_frames / fps
     frame_step = int(fps * sample_interval)
-
-    # Duyệt frame, ghi nhận thời điểm match template
+    
+    target_size = (640, 360)
     transition_times: list[float] = []
     frame_idx = 0
 
@@ -88,14 +92,14 @@ def detect_matches(
         if not ok:
             break
 
+        frame_resized = cv2.resize(frame, target_size)
         current_time = frame_idx / fps
 
-        # Kiểm tra từng template
         for name, tmpl in templates.items():
-            score = _match_template(frame, tmpl, threshold)
+            score = _match_template(frame_resized, tmpl, threshold)
             if score >= threshold:
                 transition_times.append(current_time)
-                break  # 1 match là đủ cho frame này
+                break
 
         if progress_cb:
             progress_cb(min(frame_idx / total_frames, 1.0))
@@ -106,7 +110,6 @@ def detect_matches(
 
     cap.release()
 
-    # Gộp transition points thành match boundaries
     matches = _build_matches_from_transitions(transition_times, total_duration, min_match_duration)
 
     if progress_cb:

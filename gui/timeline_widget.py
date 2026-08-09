@@ -71,11 +71,15 @@ class TimelineWidget(QWidget):
     def _time_to_x(self, t: float) -> float:
         margin = 10
         usable = self.width() - 2 * margin
+        if self._duration <= 0:
+            return margin
         return margin + (t / self._duration) * usable
 
     def _x_to_time(self, x: float) -> float:
         margin = 10
         usable = self.width() - 2 * margin
+        if usable <= 0:
+            return 0.0
         ratio = max(0.0, min(1.0, (x - margin) / usable))
         return ratio * self._duration
 

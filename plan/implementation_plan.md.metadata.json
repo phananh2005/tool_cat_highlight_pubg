@@ -1,6 +1,0 @@
-{
-  "summary": "Kế hoạch triển khai tool PUBG Highlight Cutter. Desktop app Python + PyQt6 với:\n- Auto-detect match boundaries bằng template matching (lobby/loading/winner screen)\n- Auto-detect highlights bằng kết hợp audio spikes, OCR kill feed, scene change\n- GUI với video player, timeline markers, highlight list theo nhóm game\n- Chỉnh sửa thủ công highlights (thêm/xóa/sửa, kéo chỉnh thời gian)\n- Export riêng lẻ hoặc gộp theo game qua FFmpeg\n\nCần user review: template images, tên tuyển thủ, resolution, ngôn ngữ PUBG.",
-  "updatedAt": "2026-08-08T11:27:59.284823400Z",
-  "requestFeedback": true,
-  "userFacing": true
-}

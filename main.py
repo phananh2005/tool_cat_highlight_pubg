@@ -1,10 +1,22 @@
 """PUBG Highlight Cutter — Entry point."""
 import sys
 import os
+import logging
+import io
 from pathlib import Path
 
-# Thêm project root vào sys.path
 sys.path.insert(0, str(Path(__file__).parent))
+
+stdout_utf8 = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', line_buffering=True)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='[%(asctime)s] %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(stdout_utf8),
+        logging.FileHandler(Path(__file__).parent / "debug.log", encoding='utf-8')
+    ]
+)
 
 print("[DEBUG] Starting PUBG Highlight Cutter...", flush=True)
 

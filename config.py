@@ -16,6 +16,11 @@ DEFAULTS = {
     "ffmpeg_path": "ffmpeg",
     "player_name": "",
     "kill_feed_region": [0.65, 0.0, 1.0, 0.35],  # x1,y1,x2,y2 tỷ lệ % crop kill feed
+    # Death/spectate detection (tối ưu)
+    "spectate_detect_region": [0.0, 0.0, 0.18, 0.07],  # vùng crop spectate banner (góc trên-trái)
+    "spectate_brightness_max": 45.0,    # giảm từ 60 → 45 để chính xác hơn
+    "spectate_stddev_max": 20.0,        # giảm từ 35 → 20 để chính xác hơn
+    "death_detect_enabled": True,       # bật/tắt death detection
 }
 
 CONFIG_FILE = Path(__file__).parent / "settings.json"
@@ -30,6 +35,14 @@ def load_config() -> dict:
             cfg.update(user)
         except (json.JSONDecodeError, OSError):
             pass
+            
+    # Fix: User trỏ path vào thư mục bin thay vì file exe (gây WinError 5)
+    fpath = Path(cfg.get("ffmpeg_path", "ffmpeg"))
+    if fpath.is_dir():
+        import os
+        exe = "ffmpeg.exe" if os.name == "nt" else "ffmpeg"
+        cfg["ffmpeg_path"] = str(fpath / exe)
+        
     return cfg
 
 

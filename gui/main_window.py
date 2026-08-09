@@ -6,13 +6,14 @@ không bao gồm QtMultimedia (cần Qt build riêng).
 from __future__ import annotations
 
 import os
+import time
 from pathlib import Path
 from typing import Optional
 
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSplitter,
     QTreeWidget, QTreeWidgetItem, QPushButton, QLabel, QFileDialog,
-    QProgressBar, QStatusBar, QSlider,
+    QProgressBar, QStatusBar, QSlider, QProgressDialog,
     QDoubleSpinBox, QLineEdit, QCheckBox, QMessageBox,
     QGroupBox, QFormLayout, QDialog, QDialogButtonBox,
     QApplication,
@@ -80,7 +81,7 @@ class VideoPlayer(QWidget):
             QMessageBox.critical(self, "Lỗi", f"Không mở được video:\n{path}")
             return
         self._fps = self._cap.get(5) or 30.0  # CAP_PROP_FPS
-        self._total_frames = int(self._cap.get(4))  # CAP_PROP_FRAME_COUNT
+        self._total_frames = int(self._cap.get(7))  # CAP_PROP_FRAME_COUNT
         self._slider.setRange(0, self._total_frames - 1)
         self._current_frame = 0
         self._read_frame()
@@ -265,6 +266,8 @@ class MainWindow(QMainWindow):
         self._connect_signals()
 
         self.setStyleSheet(self._build_stylesheet())
+        
+        self._check_ffmpeg_on_startup()
 
     # === UI Setup ===
 
@@ -356,11 +359,7 @@ class MainWindow(QMainWindow):
         self.timeline = TimelineWidget()
         main_layout.addWidget(self.timeline)
 
-        # Progress bar
-        self.progress = QProgressBar()
-        self.progress.setVisible(False)
-        self.progress.setTextVisible(True)
-        main_layout.addWidget(self.progress)
+        self.progress: Optional[QProgressDialog] = None  # tạo fresh mỗi lần cần
 
         # Status bar
         self.status = QStatusBar()
@@ -405,6 +404,16 @@ class MainWindow(QMainWindow):
         act_settings = QAction("⚙️ Cài đặt...", self)
         act_settings.triggered.connect(self._open_settings)
         settings_menu.addAction(act_settings)
+        
+        settings_menu.addSeparator()
+        act_check_deps = QAction("✓ Kiểm tra Dependencies...", self)
+        act_check_deps.triggered.connect(self._check_dependencies_dialog)
+        settings_menu.addAction(act_check_deps)
+        
+        settings_menu.addSeparator()
+        act_install_pkgs = QAction("📦 Cài Python Packages...", self)
+        act_install_pkgs.triggered.connect(self._install_packages_dialog)
+        settings_menu.addAction(act_install_pkgs)
 
     def _connect_signals(self):
         self.btn_play.clicked.connect(self._toggle_play)
@@ -461,11 +470,17 @@ class MainWindow(QMainWindow):
         if not path:
             return
 
-        self.project = Project(source_file=path, player_name=self.cfg.get("player_name", ""))
-        self.video_player.open(path)
-        self._refresh_tree()
-        self.timeline.set_data(self.video_player.duration, [], [])
-        self.status.showMessage(f"Đã mở: {Path(path).name}")
+        self.status.showMessage(f"Đang mở video: {Path(path).name}, vui lòng chờ...")
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        QApplication.processEvents()
+        try:
+            self.project = Project(source_file=path, player_name=self.cfg.get("player_name", ""))
+            self.video_player.open(path)
+            self._refresh_tree()
+            self.timeline.set_data(self.video_player.duration, [], [])
+            self.status.showMessage(f"Đã mở: {Path(path).name}")
+        finally:
+            QApplication.restoreOverrideCursor()
 
     def _open_project(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -474,6 +489,9 @@ class MainWindow(QMainWindow):
         )
         if not path:
             return
+        self.status.showMessage(f"Đang mở project: {Path(path).name}, vui lòng chờ...")
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        QApplication.processEvents()
         try:
             self.project = Project.load(path)
             self.video_player.open(self.project.source_file)
@@ -486,6 +504,8 @@ class MainWindow(QMainWindow):
             self.status.showMessage(f"Đã mở project: {Path(path).name}")
         except Exception as e:
             QMessageBox.critical(self, "Lỗi", f"Không đọc được project:\n{e}")
+        finally:
+            QApplication.restoreOverrideCursor()
 
     def _save_project(self):
         if not self.project:
@@ -500,6 +520,26 @@ class MainWindow(QMainWindow):
 
     # === Detection ===
 
+    def _make_progress(self, label: str) -> QProgressDialog:
+        """Tạo fresh QProgressDialog, tránh vấn đề persistent state."""
+        dlg = QProgressDialog(label, None, 0, 100, self)
+        dlg.setWindowTitle("Đang xử lý")
+        dlg.setWindowModality(Qt.WindowModality.WindowModal)
+        dlg.setAutoClose(False)
+        dlg.setAutoReset(False)
+        dlg.setMinimumDuration(500)  # hiện sau 500ms nếu chưa xong
+        dlg.setFixedSize(420, 130)
+        dlg.setStyleSheet("""
+            QProgressDialog { background-color: #1a1a1c; color: #e0e0e0; }
+            QLabel { color: #e0e0e0; font-size: 13px; font-weight: bold; padding: 4px; }
+            QProgressBar { border: 1px solid #444; border-radius: 4px;
+                text-align: center; color: white; background-color: #222; min-height: 18px; }
+            QProgressBar::chunk { background-color: #2e7d32; border-radius: 3px; }
+        """)
+        dlg.setValue(0)
+        self._progress_start_time = time.monotonic()
+        return dlg
+
     def _run_detection(self):
         if not self.project:
             QMessageBox.warning(self, "Chưa mở video", "Hãy mở file video trước.")
@@ -507,8 +547,7 @@ class MainWindow(QMainWindow):
 
         templates_dir = str(Path(__file__).parent.parent / "templates")
 
-        self.progress.setVisible(True)
-        self.progress.setValue(0)
+        self.progress = self._make_progress("Đang khởi động detection...\nVui lòng chờ, đừng đóng cửa sổ.")
         self.status.showMessage("Đang chạy auto detect...")
 
         self._worker = DetectWorker(self.project.source_file, templates_dir, self.cfg)
@@ -520,8 +559,23 @@ class MainWindow(QMainWindow):
 
     @pyqtSlot(float, str)
     def _on_detect_progress(self, value: float, text: str):
-        self.progress.setValue(int(value * 100))
-        self.progress.setFormat(f"{text} ({int(value * 100)}%)")
+        if not self.progress:
+            return
+        val = int(value * 100)
+        self.progress.setValue(val)
+        elapsed = time.monotonic() - self._progress_start_time
+        if value > 0.01:
+            total_est = elapsed / value
+            remaining = total_est - elapsed
+            if remaining < 60:
+                eta = f"Còn ~{int(remaining)}s"
+            else:
+                m, s = divmod(int(remaining), 60)
+                eta = f"Còn ~{m}m{s:02d}s"
+        else:
+            eta = "Đang tính..."
+        if self.progress:
+            self.progress.setLabelText(f"{text}\nHoàn thành: {val}% — {eta}")
 
     @pyqtSlot(list)
     def _on_matches_detected(self, matches: list):
@@ -539,14 +593,19 @@ class MainWindow(QMainWindow):
                 self.project.matches,
                 self.project.highlights,
             )
-            self.progress.setVisible(False)
+            if self.progress:
+                self.progress.close()
+                self.progress = None
             self.status.showMessage(
-                f"Hoàn tất: {len(self.project.matches)} game, {len(highlights)} highlight."
+                f"✅ Hoàn tất: {len(self.project.matches)} game, {len(highlights)} highlight."
             )
 
     @pyqtSlot(str)
     def _on_detect_error(self, msg: str):
-        self.progress.setVisible(False)
+        if self.progress:
+            self.progress.close()
+            self.progress = None
+        self.status.showMessage(f"❌ Lỗi: {msg[:80]}")
         QMessageBox.critical(self, "Lỗi Detection", msg)
 
     # === Tree view ===
@@ -721,8 +780,8 @@ class MainWindow(QMainWindow):
         if not output_dir:
             return
 
-        self.progress.setVisible(True)
-        self.progress.setValue(0)
+        self.progress = self._make_progress(f"Đang xuất {len(highlights)} highlight...\nVui lòng chờ, đừng đóng cửa sổ.")
+        self.status.showMessage(f"Đang export {len(highlights)} highlight...")
 
         self._export_worker = ExportWorker(
             self.project.source_file,
@@ -740,8 +799,10 @@ class MainWindow(QMainWindow):
 
     @pyqtSlot(list)
     def _on_export_finished(self, files: list):
-        self.progress.setVisible(False)
-        self.status.showMessage(f"Export xong {len(files)} file(s).")
+        if self.progress:
+            self.progress.close()
+            self.progress = None
+        self.status.showMessage(f"✅ Export xong {len(files)} file(s).")
         QMessageBox.information(
             self, "Export hoàn tất",
             f"Đã tạo {len(files)} file:\n" + "\n".join(Path(f).name for f in files[:10]),
@@ -754,132 +815,64 @@ class MainWindow(QMainWindow):
         if dlg.exec() == QDialog.DialogCode.Accepted:
             save_config(self.cfg)
             self.status.showMessage("Đã lưu cài đặt.")
+    
+    def _check_ffmpeg_on_startup(self):
+        ffmpeg_path = self.cfg.get("ffmpeg_path", "ffmpeg")
+        import subprocess
+        try:
+            subprocess.run(
+                [ffmpeg_path, "-version"],
+                capture_output=True,
+                timeout=5,
+                creationflags=0x08000000,
+            )
+        except (FileNotFoundError, PermissionError, OSError, Exception):
+            pass
+
+    # === Stylesheet ===
+
+    def _check_dependencies_dialog(self):
+        dlg = DependenciesCheckDialog(self)
+        dlg.exec()
+    
+    def _install_packages_dialog(self):
+        dlg = PackageInstallerDialog(self)
+        dlg.exec()
 
     # === Stylesheet ===
 
     @staticmethod
     def _build_stylesheet() -> str:
         return """
-        QMainWindow {
-            background-color: #1e1e22;
-            color: #e0e0e0;
-        }
-        QMenuBar {
-            background-color: #2a2a30;
-            color: #e0e0e0;
-            border-bottom: 1px solid #3a3a42;
-        }
-        QMenuBar::item:selected {
-            background-color: #3a3a50;
-        }
-        QMenu {
-            background-color: #2a2a30;
-            color: #e0e0e0;
-            border: 1px solid #3a3a42;
-        }
-        QMenu::item:selected {
-            background-color: #4a4a60;
-        }
-        QSplitter::handle {
-            background-color: #3a3a42;
-            width: 2px;
-        }
-        QTreeWidget {
-            background-color: #252528;
-            color: #e0e0e0;
-            border: 1px solid #3a3a42;
-            border-radius: 4px;
-            font-size: 12px;
-        }
-        QTreeWidget::item:selected {
-            background-color: #3a4a6a;
-        }
-        QTreeWidget::item:hover {
-            background-color: #303040;
-        }
-        QTreeWidget QHeaderView::section {
-            background-color: #2a2a30;
-            color: #a0a0a0;
-            border: none;
-            padding: 4px;
-            font-size: 11px;
-        }
-        QPushButton {
-            background-color: #3a3a50;
-            color: #e0e0e0;
-            border: 1px solid #4a4a60;
-            border-radius: 4px;
-            padding: 6px 12px;
-            font-size: 12px;
-        }
-        QPushButton:hover {
-            background-color: #4a4a68;
-            border-color: #6a6a80;
-        }
-        QPushButton:pressed {
-            background-color: #2a2a3a;
-        }
-        QGroupBox {
-            color: #c0c0c0;
-            border: 1px solid #3a3a42;
-            border-radius: 4px;
-            margin-top: 8px;
-            padding-top: 16px;
-            font-size: 12px;
-        }
-        QGroupBox::title {
-            subcontrol-origin: margin;
-            left: 10px;
-            padding: 0 4px;
-        }
-        QCheckBox {
-            color: #e0e0e0;
-            spacing: 6px;
-        }
-        QProgressBar {
-            background-color: #252528;
-            border: 1px solid #3a3a42;
-            border-radius: 4px;
-            text-align: center;
-            color: #e0e0e0;
-            height: 20px;
-        }
-        QProgressBar::chunk {
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                stop:0 #4a6aaa, stop:1 #6a8acc);
-            border-radius: 3px;
-        }
-        QStatusBar {
-            background-color: #2a2a30;
-            color: #a0a0a0;
-            border-top: 1px solid #3a3a42;
-        }
-        QLabel {
-            color: #e0e0e0;
-        }
-        QLineEdit, QSpinBox, QDoubleSpinBox {
-            background-color: #252528;
-            color: #e0e0e0;
-            border: 1px solid #3a3a42;
-            border-radius: 3px;
-            padding: 4px;
-        }
-        QSlider::groove:horizontal {
-            background: #3a3a42;
-            height: 6px;
-            border-radius: 3px;
-        }
-        QSlider::handle:horizontal {
-            background: #6a8acc;
-            width: 14px;
-            height: 14px;
-            margin: -4px 0;
-            border-radius: 7px;
-        }
-        QSlider::sub-page:horizontal {
-            background: #4a6aaa;
-            border-radius: 3px;
-        }
+        QMainWindow { background-color: #1a1a1c; color: #e0e0e0; font-family: 'Segoe UI', sans-serif; }
+        QMenuBar { background-color: #232326; color: #e0e0e0; border-bottom: 1px solid #333; }
+        QMenuBar::item:selected { background-color: #2e7d32; border-radius: 4px; }
+        QMenu { background-color: #232326; color: #e0e0e0; border: 1px solid #333; }
+        QMenu::item:selected { background-color: #388e3c; }
+        QSplitter::handle { background-color: #333; width: 1px; }
+        QTreeWidget { background-color: #1e1e21; color: #e0e0e0; border: 1px solid #333; border-radius: 6px; font-size: 13px; alternate-background-color: #222225; outline: none; }
+        QTreeWidget::item { padding: 4px; border-radius: 4px; }
+        QTreeWidget::item:selected { background-color: #2e7d32; color: white; }
+        QTreeWidget::item:hover:!selected { background-color: #333338; }
+        QTreeWidget QHeaderView::section { background-color: #232326; color: #aaa; border: none; padding: 6px; font-size: 12px; font-weight: bold; }
+        QPushButton { background-color: #2d2d31; color: #e0e0e0; border: 1px solid #444; border-radius: 6px; padding: 8px 14px; font-size: 12px; font-weight: 500; }
+        QPushButton:hover { background-color: #3a3a3f; border: 1px solid #555; }
+        QPushButton:pressed { background-color: #2e7d32; border: 1px solid #2e7d32; }
+        QLabel { color: #d0d0d0; }
+        QGroupBox { border: 1px solid #444; border-radius: 6px; margin-top: 10px; padding-top: 10px; font-weight: bold; color: #aaa; }
+        QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; padding: 0 5px; }
+        QCheckBox { color: #d0d0d0; }
+        QCheckBox::indicator { width: 16px; height: 16px; border-radius: 4px; border: 1px solid #555; background-color: #2d2d31; }
+        QCheckBox::indicator:checked { background-color: #2e7d32; border: 1px solid #2e7d32; }
+        QSlider::groove:horizontal { border: 1px solid #444; height: 6px; background: #222; border-radius: 3px; }
+        QSlider::handle:horizontal { background: #2e7d32; width: 14px; margin: -4px 0; border-radius: 7px; }
+        QSlider::handle:horizontal:hover { background: #4caf50; }
+        QProgressBar { border: 1px solid #444; border-radius: 4px; text-align: center; color: white; background-color: #222; }
+        QProgressBar::chunk { background-color: #2e7d32; border-radius: 3px; }
+        QStatusBar { background-color: #1a1a1c; color: #999; border-top: 1px solid #333; }
+        QDialog { background-color: #1a1a1c; }
+        QLineEdit, QDoubleSpinBox { background-color: #252528; color: white; border: 1px solid #444; border-radius: 4px; padding: 4px; }
+        QLineEdit:focus, QDoubleSpinBox:focus { border: 1px solid #2e7d32; }
         """
 
 
@@ -1012,3 +1005,236 @@ class SettingsDialog(QDialog):
         self.cfg["highlight_pad_before"] = self.spn_pad_b.value()
         self.cfg["highlight_pad_after"] = self.spn_pad_a.value()
         self.accept()
+
+
+class DependenciesCheckDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Kiểm tra Dependencies")
+        self.setMinimumWidth(600)
+        self.setMinimumHeight(400)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+
+        title = QLabel("Kiểm tra Dependencies")
+        title.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
+        layout.addWidget(title)
+
+        self.text_edit = QLabel()
+        self.text_edit.setWordWrap(True)
+        self.text_edit.setStyleSheet(
+            "background-color: #252528; color: #e0e0e0; padding: 8px; border-radius: 4px; font-family: Consolas;"
+        )
+        layout.addWidget(self.text_edit, stretch=1)
+
+        btn_layout = QHBoxLayout()
+        btn_refresh = QPushButton("🔄 Làm mới")
+        btn_close = QPushButton("Đóng")
+        btn_refresh.clicked.connect(self._refresh_check)
+        btn_close.clicked.connect(self.accept)
+        btn_layout.addWidget(btn_refresh)
+        btn_layout.addStretch()
+        btn_layout.addWidget(btn_close)
+        layout.addLayout(btn_layout)
+
+        self.setStyleSheet("""
+            QDialog { background-color: #1e1e22; color: #e0e0e0; }
+            QLabel { color: #e0e0e0; }
+            QPushButton { background-color: #3a3a50; color: #e0e0e0;
+                border: 1px solid #4a4a60; border-radius: 4px; padding: 6px 12px; }
+            QPushButton:hover { background-color: #4a4a68; }
+        """)
+
+        # Gọi sau khi dialog show để kịp render thông báo "Đang kiểm tra..."
+        from PyQt6.QtCore import QTimer
+        QTimer.singleShot(100, self._refresh_check)
+
+    def _refresh_check(self):
+        import subprocess
+        
+        self.text_edit.setText("Đang kiểm tra dependencies, vui lòng chờ...")
+        self.setCursor(Qt.CursorShape.WaitCursor)
+        
+        result = []
+        result.append("=" * 60)
+        result.append("KIỂM TRA DEPENDENCIES")
+        result.append("=" * 60)
+        result.append("")
+
+        # Python version
+        result.append(f"✓ Python: {__import__('sys').version_info.major}.{__import__('sys').version_info.minor}")
+
+        # FFmpeg (dùng config)
+        try:
+            from config import load_config
+            cfg = load_config()
+            ffmpeg_path = cfg.get("ffmpeg_path", "ffmpeg")
+        except:
+            ffmpeg_path = "ffmpeg"
+        
+        try:
+            proc = subprocess.run(
+                [ffmpeg_path, "-version"],
+                capture_output=True,
+                timeout=5,
+                text=True,
+            )
+            if proc.returncode == 0:
+                ffmpeg_ver = proc.stdout.split("\n")[0]
+                result.append(f"✓ FFmpeg: {ffmpeg_ver}")
+            else:
+                result.append(f"✗ FFmpeg: không tìm thấy ({ffmpeg_path})")
+        except FileNotFoundError:
+            result.append(f"✗ FFmpeg: không tìm thấy ({ffmpeg_path})")
+        except Exception as e:
+            result.append(f"⚠ FFmpeg: {e}")
+
+        # PyQt6
+        try:
+            from PyQt6 import QtCore
+            result.append(f"✓ PyQt6: {QtCore.QT_VERSION_STR}")
+        except ImportError:
+            result.append("✗ PyQt6: chưa cài")
+
+        # opencv-python
+        try:
+            import cv2
+            result.append(f"✓ opencv-python: {cv2.__version__}")
+        except ImportError:
+            result.append("✗ opencv-python: chưa cài")
+
+        # numpy
+        try:
+            import numpy
+            result.append(f"✓ numpy: {numpy.__version__}")
+        except ImportError:
+            result.append("✗ numpy: chưa cài")
+
+        # scipy
+        try:
+            import scipy
+            result.append(f"✓ scipy: {scipy.__version__}")
+        except ImportError:
+            result.append("✗ scipy: chưa cài")
+
+        # easyocr
+        try:
+            import easyocr
+            result.append(f"✓ easyocr: cài sẵn (OCR)")
+        except ImportError:
+            result.append("⚠ easyocr: chưa cài (optional)")
+
+        result.append("")
+        result.append("=" * 60)
+        result.append("HƯỚNG DẪN")
+        result.append("=" * 60)
+        result.append("")
+        result.append("Nếu thiếu dependencies:")
+        result.append("  • Python packages: pip install -r requirements.txt")
+        result.append("  • FFmpeg: https://www.gyan.dev/ffmpeg/builds/")
+        result.append("    Chọn ffmpeg-9.0-essentials.zip")
+        result.append("    Thêm bin folder vào PATH")
+        result.append("")
+
+        self.text_edit.setText("\n".join(result))
+        self.unsetCursor()
+
+
+class PackageInstallerDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Cài Python Packages")
+        self.setMinimumWidth(600)
+        self.setMinimumHeight(350)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+
+        title = QLabel("Cài Packages từ requirements.txt")
+        title.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
+        layout.addWidget(title)
+
+        desc = QLabel("Nhấn 'Cài' để cài tất cả packages cần thiết.")
+        layout.addWidget(desc)
+
+        self.progress = QProgressBar()
+        self.progress.setVisible(False)
+        layout.addWidget(self.progress)
+
+        self.output_text = QLabel()
+        self.output_text.setWordWrap(True)
+        self.output_text.setStyleSheet(
+            "background-color: #252528; color: #e0e0e0; padding: 8px; border-radius: 4px; font-family: Consolas; font-size: 10px;"
+        )
+        layout.addWidget(self.output_text, stretch=1)
+
+        btn_layout = QHBoxLayout()
+        self.btn_install = QPushButton("📦 Cài Packages")
+        btn_close = QPushButton("Đóng")
+        self.btn_install.clicked.connect(self._install)
+        btn_close.clicked.connect(self.accept)
+        btn_layout.addWidget(self.btn_install)
+        btn_layout.addStretch()
+        btn_layout.addWidget(btn_close)
+        layout.addLayout(btn_layout)
+
+        self.setStyleSheet("""
+            QDialog { background-color: #1e1e22; color: #e0e0e0; }
+            QLabel { color: #e0e0e0; }
+            QPushButton { background-color: #3a3a50; color: #e0e0e0;
+                border: 1px solid #4a4a60; border-radius: 4px; padding: 6px 12px; }
+            QPushButton:hover { background-color: #4a4a68; }
+            QProgressBar { background-color: #252528; border: 1px solid #3a3a42; 
+                border-radius: 4px; text-align: center; color: #e0e0e0; }
+            QProgressBar::chunk { background: #4a6aaa; border-radius: 3px; }
+        """)
+
+    def _install(self):
+        import subprocess
+        import sys
+        from PyQt6.QtWidgets import QApplication
+        from PyQt6.QtCore import Qt
+
+        self.btn_install.setEnabled(False)
+        self.progress.setVisible(True)
+        self.output_text.setText("Đang cài đặt, hệ thống đang chạy. Vui lòng chờ...\n")
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        QApplication.processEvents()
+
+        try:
+            self.output_text.setText("Nâng cấp pip...\n")
+            QApplication.processEvents()
+            subprocess.run(
+                [sys.executable, "-m", "pip", "install", "--upgrade", "pip"],
+                capture_output=True,
+                timeout=120,
+            )
+
+            req_file = Path(__file__).parent.parent / "requirements.txt"
+            if req_file.exists():
+                self.output_text.setText("Cài packages từ requirements.txt...\n")
+                QApplication.processEvents()
+                result = subprocess.run(
+                    [sys.executable, "-m", "pip", "install", "-r", str(req_file)],
+                    capture_output=True,
+                    timeout=300,
+                    text=True,
+                )
+
+                if result.returncode == 0:
+                    self.output_text.setText("✓ Cài đặt thành công!\n\nChạy setup_check.py để kiểm tra.")
+                    QMessageBox.information(self, "Thành công", "Packages đã cài xong!")
+                else:
+                    error = result.stderr or result.stdout
+                    self.output_text.setText(f"✗ Lỗi:\n{error}")
+                    QMessageBox.warning(self, "Lỗi", "Cài đặt thất bại. Xem output bên dưới.")
+            else:
+                self.output_text.setText("✗ requirements.txt không tìm thấy")
+        except Exception as e:
+            self.output_text.setText(f"✗ Lỗi: {e}")
+            QMessageBox.critical(self, "Lỗi", str(e))
+        finally:
+            self.btn_install.setEnabled(True)
+            self.progress.setVisible(False)
+            QApplication.restoreOverrideCursor()
