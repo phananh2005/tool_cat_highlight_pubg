@@ -60,6 +60,3 @@ settings.json
 # Test outputs
 test_output/
 benchmark_results/
-
-# Git worktrees
-.worktrees/

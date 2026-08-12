@@ -29,9 +29,9 @@ class Highlight:
     """Một khoảnh khắc highlight trong video."""
     start_time: float          # seconds từ đầu video
     end_time: float
-    confidence: float          # 0.0 - 1.0
-    highlight_type: str        # "kill", "audio_spike", "scene_change", "manual"
-    match_index: int           # thuộc game nào
+    confidence: float = 1.0          # 0.0 - 1.0
+    highlight_type: str = "manual"   # "kill", "audio_spike", "scene_change", "manual"
+    match_index: int = 0             # thuộc game nào
     label: str = ""
     enabled: bool = True       # user có thể tắt mà không xóa
 
