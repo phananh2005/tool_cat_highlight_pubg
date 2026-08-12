@@ -30,6 +30,7 @@ class DetectHighlightRequest(BaseModel):
     video_path: str
     matches: list[dict]
     player_name: str = ""
+    config: dict = None
 
 class ExportRequest(BaseModel):
     video_path: str
@@ -57,7 +58,7 @@ def api_detect_matches(req: DetectMatchRequest):
 def api_detect_highlights(req: DetectHighlightRequest):
     try:
         matches = [Match(**m) for m in req.matches]
-        highlights = detect_highlights(req.video_path, matches, req.player_name)
+        highlights = detect_highlights(req.video_path, matches, req.player_name, req.config)
         return [dataclasses.asdict(h) for h in highlights]
     except Exception as e:
         traceback.print_exc()
