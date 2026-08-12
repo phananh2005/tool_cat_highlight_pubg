@@ -3,7 +3,10 @@
 Công cụ tự động phát hiện và cắt highlight từ livestream PUBG. Chạy hoàn toàn trên trình duyệt với sức mạnh xử lý đa luồng (Background Tasks) ở Backend.
 
 ## 🎯 Tính năng nổi bật
+<<<<<<< HEAD
 
+=======
+>>>>>>> 4cf22774ce09355b98aad55d828505b6be3e3f0b
 - **⚡ Phát hiện Highlight tự động**: Quét file video để tìm các khoảnh khắc bắn súng (Audio spike), chuyển cảnh (Scene change) và chữ Kill trên màn hình (OCR).
 - **🌐 Giao diện Web (Pro Editor)**:
   - Timeline Editor kéo thả mượt mà, zoom chi tiết đến từng mili-giây.
@@ -19,11 +22,16 @@ Công cụ tự động phát hiện và cắt highlight từ livestream PUBG. C
 ## 🚀 Hướng dẫn Cài đặt & Chạy
 
 Kiến trúc phần mềm chia làm 2 phần: **Backend (Python)** và **Frontend (React)**. Cần chạy song song cả hai.
+<<<<<<< HEAD
 
 ### 1. Khởi động Backend (FastAPI)
 
 Yêu cầu: Python 3.8+ và đã cài đặt FFmpeg trên máy.
+=======
+>>>>>>> 4cf22774ce09355b98aad55d828505b6be3e3f0b
 
+### 1. Khởi động Backend (FastAPI)
+Yêu cầu: Python 3.8+ và đã cài đặt FFmpeg trên máy.
 ```bash
 # Cài đặt thư viện Python
 pip install -r requirements.txt
@@ -33,9 +41,13 @@ python main_api.py
 ```
 
 ### 2. Khởi động Frontend (React/Vite)
+<<<<<<< HEAD
 
 Mở một cửa sổ Terminal khác:
 
+=======
+Mở một cửa sổ Terminal khác:
+>>>>>>> 4cf22774ce09355b98aad55d828505b6be3e3f0b
 ```bash
 # Chuyển vào thư mục web
 cd web
@@ -52,7 +64,10 @@ Sau khi chạy xong, mở trình duyệt truy cập: **http://localhost:5173**
 ---
 
 ## 📖 Hướng dẫn Sử dụng
+<<<<<<< HEAD
 
+=======
+>>>>>>> 4cf22774ce09355b98aad55d828505b6be3e3f0b
 1. **Load Video**: Nhập đường dẫn gốc của video trên máy tính (VD: `C:\videos\stream.mp4`).
 2. **Detect Matches**: Bấm để tìm các ranh giới của từng game trong luồng stream dài.
 3. **Detect Highlights**: Bấm để quét âm thanh tiếng súng và hình ảnh để bắt Highlight. (Có thể mất vài phút).
@@ -65,9 +80,19 @@ Sau khi chạy xong, mở trình duyệt truy cập: **http://localhost:5173**
 ---
 
 ## ⚙️ Thiết lập Nâng cao (Settings)
+<<<<<<< HEAD
 
 Bấm vào nút **⚙️ Settings** trên Web để điều chỉnh:
 
 - **Audio Spike Threshold**: Ngưỡng âm lượng để xác định tiếng súng. Càng nhỏ thì càng dễ bắt (nhưng dễ nhiễu).
 - **Padding**: Số giây lấy dư ra ở đằng trước và đằng sau lúc bắn để clip không bị cụt.
 - **FFmpeg Path**: Nếu máy tính chưa nhận biến môi trường FFmpeg, bạn có thể trỏ thẳng đường dẫn `ffmpeg.exe` vào đây.
+=======
+Bấm vào nút **⚙️ Settings** trên Web để điều chỉnh:
+- **Audio Spike Threshold**: Ngưỡng âm lượng để xác định tiếng súng. Càng nhỏ thì càng dễ bắt (nhưng dễ nhiễu).
+- **Padding**: Số giây lấy dư ra ở đằng trước và đằng sau lúc bắn để clip không bị cụt.
+- **FFmpeg Path**: Nếu máy tính chưa nhận biến môi trường FFmpeg, bạn có thể trỏ thẳng đường dẫn `ffmpeg.exe` vào đây.
+
+---
+*Phát triển bởi đội ngũ đam mê PUBG. Chúc bạn có những pha Highlight để đời!*
+>>>>>>> 4cf22774ce09355b98aad55d828505b6be3e3f0b
