@@ -37,6 +37,14 @@ class ExportRequest(BaseModel):
     highlights: list[dict]
     output_dir: str = "exports"
 
+_export_state = {
+    "progress": 0.0,
+    "message": "",
+    "files": [],
+    "done": False,
+    "error": ""
+}
+
 @app.get("/")
 def read_root():
     return {"status": "ok"}
@@ -64,15 +72,38 @@ def api_detect_highlights(req: DetectHighlightRequest):
         traceback.print_exc()
         return {"error": str(e)}
 
+def run_export_bg(video_path: str, highlights: list, output_dir: str):
+    global _export_state
+    _export_state.update({"progress": 0.0, "message": "Đang bắt đầu export...", "files": [], "done": False, "error": ""})
+
+    def progress_cb(prog: float, msg: str):
+        _export_state["progress"] = prog
+        _export_state["message"] = msg
+
+    try:
+        created = export_highlights(video_path, highlights, output_dir, progress_cb=progress_cb)
+        _export_state["files"] = created
+        _export_state["progress"] = 1.0
+        _export_state["message"] = "Export thành công!"
+    except Exception as e:
+        traceback.print_exc()
+        _export_state["error"] = str(e)
+    finally:
+        _export_state["done"] = True
+
 @app.post("/api/export")
-def api_export(req: ExportRequest):
+def api_export(req: ExportRequest, background_tasks: BackgroundTasks):
     try:
         highlights = [Highlight(**h) for h in req.highlights]
-        created = export_highlights(req.video_path, highlights, req.output_dir)
-        return {"status": "success", "files": created}
+        background_tasks.add_task(run_export_bg, req.video_path, highlights, req.output_dir)
+        return {"status": "started"}
     except Exception as e:
         traceback.print_exc()
         return {"error": str(e)}
+
+@app.get("/api/export/status")
+def api_export_status():
+    return _export_state
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

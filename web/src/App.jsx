@@ -1,7 +1,8 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import Timeline from './Timeline';
 import Toast from './Toast';
 import SettingsModal from './SettingsModal';
+import ExportProgressModal from './ExportProgressModal';
 import './App.css';
 
 function App() {
@@ -9,7 +10,6 @@ function App() {
   const [matches, setMatches] = useState([]);
   const [highlights, setHighlights] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [exporting, setExporting] = useState(false);
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [zoom, setZoom] = useState(1);
@@ -22,9 +22,65 @@ function App() {
     highlight_pad_after: 2.0
   });
 
+  const [exportStatus, setExportStatus] = useState({ progress: 0, message: '', done: false, error: '' });
+  const [showExportModal, setShowExportModal] = useState(false);
+
   const videoRef = useRef(null);
 
   const showMsg = (message, type = 'info') => setToast({ message, type });
+
+  // Keyboard Shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      if (e.code === 'Space') {
+        e.preventDefault();
+        if (videoRef.current) {
+          if (videoRef.current.paused) videoRef.current.play();
+          else videoRef.current.pause();
+        }
+      } else if (e.code === 'ArrowLeft') {
+        if (videoRef.current) videoRef.current.currentTime = Math.max(0, videoRef.current.currentTime - 5);
+      } else if (e.code === 'ArrowRight') {
+        if (videoRef.current && duration) videoRef.current.currentTime = Math.min(duration, videoRef.current.currentTime + 5);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [duration]);
+
+  // Project Save/Load
+  const saveProject = () => {
+    const data = { videoPath, matches, highlights, config };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'pubg_project.json';
+    a.click();
+    URL.revokeObjectURL(url);
+    showMsg('Đã lưu project.json', 'success');
+  };
+
+  const loadProject = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        if(data.videoPath) setVideoPath(data.videoPath);
+        if(data.matches) setMatches(data.matches);
+        if(data.highlights) setHighlights(data.highlights);
+        if(data.config) setConfig(data.config);
+        showMsg('Đã tải project thành công', 'success');
+      } catch (err) {
+        showMsg('Lỗi đọc file project (định dạng không đúng)', 'error');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = null;
+  };
 
   const updateHighlight = (index, edge, time) => {
     setHighlights(prev => {
@@ -109,8 +165,10 @@ function App() {
   const exportHighlights = async () => {
     const active = highlights.filter(h => h.enabled !== false);
     if (active.length === 0) return showMsg('Chưa có highlights nào được bật', 'error');
-    setExporting(true);
-    showMsg('Đang export clips (Vui lòng chờ)...', 'info');
+    
+    setExportStatus({ progress: 0, message: 'Đang gửi yêu cầu...', done: false, error: '' });
+    setShowExportModal(true);
+
     try {
       const res = await fetch('http://localhost:8000/api/export', {
         method: 'POST',
@@ -118,12 +176,29 @@ function App() {
         body: JSON.stringify({ video_path: videoPath, highlights: active, output_dir: 'exports' })
       });
       const data = await res.json();
-      if (data.error) showMsg('Lỗi: ' + data.error, 'error');
-      else showMsg(`Export thành công ${data.files.length} clips vào thư mục exports!`, 'success');
+      if (data.error) {
+         setExportStatus({ progress: 0, message: 'Lỗi: ' + data.error, done: true, error: data.error });
+         return;
+      }
+      
+      const poll = setInterval(async () => {
+        try {
+          const sRes = await fetch('http://localhost:8000/api/export/status');
+          const statusData = await sRes.json();
+          setExportStatus(statusData);
+          if (statusData.done) {
+            clearInterval(poll);
+            if (statusData.error) showMsg('Lỗi xuất video!', 'error');
+            else showMsg(`Export thành công ${statusData.files?.length || 0} clips!`, 'success');
+          }
+        } catch (e) {
+          // ignore network temp error
+        }
+      }, 500);
+
     } catch (e) {
-      showMsg('Lỗi kết nối: ' + e.message, 'error');
+      setExportStatus({ progress: 0, message: 'Lỗi kết nối: ' + e.message, done: true, error: e.message });
     }
-    setExporting(false);
   };
 
   const seekTo = (seconds) => {
@@ -139,8 +214,15 @@ function App() {
         <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-400 via-indigo-400 to-emerald-400 bg-clip-text text-transparent">
           PUBG Highlight Cutter
         </h1>
-        <div className="flex gap-4">
-          <button onClick={() => setShowSettings(true)} className="px-5 py-2 bg-neutral-800 hover:bg-neutral-700 rounded-lg text-sm font-medium transition-colors border border-neutral-700 shadow-sm flex items-center gap-2">
+        <div className="flex gap-4 items-center">
+          <input type="file" id="loadProj" accept=".json" className="hidden" onChange={loadProject} />
+          <button onClick={() => document.getElementById('loadProj').click()} className="px-4 py-2 bg-neutral-900 hover:bg-neutral-800 rounded-lg text-sm text-neutral-300 border border-neutral-700 transition" title="Mở file project.json">
+            📂 Mở Project
+          </button>
+          <button onClick={saveProject} className="px-4 py-2 bg-neutral-900 hover:bg-neutral-800 rounded-lg text-sm text-neutral-300 border border-neutral-700 transition" title="Lưu state hiện tại">
+            💾 Lưu Project
+          </button>
+          <button onClick={() => setShowSettings(true)} className="px-5 py-2 bg-neutral-800 hover:bg-neutral-700 rounded-lg text-sm font-medium transition-colors border border-neutral-700 shadow-sm flex items-center gap-2" title="Cấu hình">
             <span>⚙️</span> Settings
           </button>
         </div>
@@ -194,6 +276,7 @@ function App() {
                   <button onClick={addManualHighlight} className="px-3 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded text-xs border border-neutral-700 transition">
                     + Thêm Clip Tại Đây
                   </button>
+                  <span className="text-[10px] text-neutral-600 hidden sm:inline ml-2">(Phím tắt: Space để Play, Mũi tên để tua)</span>
                 </div>
                 <div className="flex items-center gap-3 bg-neutral-950 px-3 py-1.5 rounded-lg border border-neutral-800">
                   <span className="text-xs text-neutral-500 font-medium">Zoom</span>
@@ -219,8 +302,8 @@ function App() {
         <div className="bg-neutral-900 rounded-xl border border-neutral-800/60 shadow-xl flex flex-col h-[calc(100vh-9rem)]">
           <div className="p-5 border-b border-neutral-800/60 flex justify-between items-center bg-neutral-900/50">
             <h2 className="text-lg font-semibold text-neutral-200">Danh sách</h2>
-            <button onClick={exportHighlights} disabled={exporting || highlights.length === 0} className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-amber-950 rounded-lg text-sm font-bold transition-all disabled:opacity-50 shadow-lg shadow-amber-900/20">
-              {exporting ? 'Đang xuất...' : '3. Export Clips'}
+            <button onClick={exportHighlights} disabled={showExportModal || highlights.length === 0} className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-amber-950 rounded-lg text-sm font-bold transition-all disabled:opacity-50 shadow-lg shadow-amber-900/20">
+              3. Export Clips
             </button>
           </div>
 
@@ -259,6 +342,7 @@ function App() {
 
       <Toast toast={toast} onClose={() => setToast({ message: '' })} />
       <SettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} config={config} onSave={(cfg) => { setConfig(cfg); setShowSettings(false); showMsg('Đã lưu cấu hình', 'success'); }} />
+      <ExportProgressModal isOpen={showExportModal} status={exportStatus} onClose={() => setShowExportModal(false)} />
     </div>
   );
 }
