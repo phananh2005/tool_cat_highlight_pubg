@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import Timeline from './Timeline';
 import './App.css';
 
 function App() {
@@ -7,6 +8,21 @@ function App() {
   const [highlights, setHighlights] = useState([]);
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [duration, setDuration] = useState(0);
+
+  const updateHighlight = (index, edge, time) => {
+    setHighlights(prev => {
+      const next = [...prev];
+      const h = { ...next[index] };
+      if (edge === 'start') {
+        h.start_time = Math.min(time, h.end_time - 0.5); // min 0.5s duration
+      } else {
+        h.end_time = Math.max(time, h.start_time + 0.5);
+      }
+      next[index] = h;
+      return next;
+    });
+  };
 
   const detectMatches = async () => {
     if (!videoPath) return alert('Nhập đường dẫn video');
@@ -115,6 +131,7 @@ function App() {
               <video 
                 id="videoPlayer"
                 controls 
+                onLoadedMetadata={(e) => setDuration(e.target.duration)}
                 src={`http://localhost:8000/video?path=${encodeURIComponent(videoPath)}`} 
                 className="w-full h-full object-contain bg-black"
               />
@@ -127,6 +144,16 @@ function App() {
               </div>
             )}
           </div>
+          
+          {videoPath && duration > 0 && (
+            <Timeline 
+              duration={duration} 
+              matches={matches} 
+              highlights={highlights} 
+              onSeek={seekTo} 
+              onUpdateHighlight={updateHighlight} 
+            />
+          )}
         </div>
 
         {/* Right Column: Sidebar */}
