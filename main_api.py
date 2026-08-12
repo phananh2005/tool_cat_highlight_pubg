@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -9,7 +9,8 @@ import sys
 
 from core.match_detector import detect_matches
 from core.highlight_detector import detect_highlights
-from core.models import Match
+from core.video_processor import export_highlights
+from core.models import Match, Highlight
 
 app = FastAPI()
 
@@ -29,6 +30,11 @@ class DetectHighlightRequest(BaseModel):
     video_path: str
     matches: list[dict]
     player_name: str = ""
+
+class ExportRequest(BaseModel):
+    video_path: str
+    highlights: list[dict]
+    output_dir: str = "exports"
 
 @app.get("/")
 def read_root():
@@ -53,6 +59,16 @@ def api_detect_highlights(req: DetectHighlightRequest):
         matches = [Match(**m) for m in req.matches]
         highlights = detect_highlights(req.video_path, matches, req.player_name)
         return [dataclasses.asdict(h) for h in highlights]
+    except Exception as e:
+        traceback.print_exc()
+        return {"error": str(e)}
+
+@app.post("/api/export")
+def api_export(req: ExportRequest):
+    try:
+        highlights = [Highlight(**h) for h in req.highlights]
+        created = export_highlights(req.video_path, highlights, req.output_dir)
+        return {"status": "success", "files": created}
     except Exception as e:
         traceback.print_exc()
         return {"error": str(e)}
